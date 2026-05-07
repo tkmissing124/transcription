@@ -1,0 +1,25 @@
+# 環境変数・認証情報
+.env
+credentials/client_secret.json
+credentials/token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# uv
+.uv/
+
+# ログ
+logs/
+
+# macOS
+.DS_Store
+
+# エディタ
+.vscode/
+.idea/
