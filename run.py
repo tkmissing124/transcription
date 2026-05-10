@@ -3,9 +3,10 @@
 使い方:
     $ uv run python run.py
 
-    タイトル: DX推進セミナー
-    日付（YYYY-MM-DD、Enterで今日）: 2026-05-08
-    カテゴリ（テクノロジー/ビジネス/読書/セミナー/その他）: セミナー
+    タイトル [26508_会議]:          ← Enterで提案値を使用、入力で上書き
+    日付 [2026-05-08]:             ← ファイル名先頭の yymdd から自動推測
+    カテゴリ候補: PN、全体、…
+    カテゴリ（自由入力可）: セミナー
     発言者（複数の場合はカンマ区切り、任意）: 石川さん, 田中さん
     補足（任意、Enterでスキップ）: 石川さんの話を踏まえて整理
 
@@ -43,45 +44,102 @@ logging.basicConfig(
 )
 logger = logging.getLogger("run")
 
-VALID_CATEGORIES = ["テクノロジー", "ビジネス", "読書", "セミナー", "その他"]
+
+# === ファイル名からのデフォルト推測 ===
+def _parse_date_from_filename(name: str) -> date | None:
+    """
+    ファイル名先頭の連続数字から日付を推測する。
+    yymdd（5桁）または yymmdd（6桁）に対応。
+    例: 26508_xxx → 2026-05-08 / 260508_xxx → 2026-05-08
+    """
+    digits = ""
+    for c in Path(name).stem:
+        if c.isdigit():
+            digits += c
+        else:
+            break
+
+    # 6桁: yymmdd
+    if len(digits) >= 6:
+        try:
+            yy, mm, dd = int(digits[:2]), int(digits[2:4]), int(digits[4:6])
+            return date(2000 + yy, mm, dd)
+        except ValueError:
+            pass
+
+    # 5桁: yymdd（月1桁）
+    if len(digits) >= 5:
+        try:
+            yy, m, dd = int(digits[:2]), int(digits[2]), int(digits[3:5])
+            return date(2000 + yy, m, dd)
+        except ValueError:
+            pass
+
+    return None
+
+
+def _suggest_from_files(files: list[Path]) -> tuple[str, date | None]:
+    """inboxの音声ファイルからタイトルと日付のデフォルト値を推測する"""
+    audio_files = [f for f in files if f.suffix.lower() in config.AUDIO_EXTENSIONS]
+    if not audio_files:
+        return "", None
+    first = audio_files[0]
+    return first.stem, _parse_date_from_filename(first.name)
+
+
+def _prompt_with_default(prompt: str, default: str) -> str:
+    """デフォルト値を表示してinputを受け取る。Enterでデフォルト値を返す。"""
+    raw = input(f"{prompt} [{default}]: ").strip()
+    return raw if raw else default
 
 
 # === 対話式入力 ===
-def ask_inputs() -> tuple[str, date, str, list[str], str]:
+def ask_inputs(suggested_title: str = "", suggested_date: date | None = None) -> tuple[str, date, str, list[str], str, bool]:
     """タイトル・日付・カテゴリ・発言者・補足を対話式で取得する"""
     print()
 
-    title = ""
-    while not title.strip():
-        title = input("タイトル: ").strip()
-        if not title:
-            print("  タイトルは必須です。")
+    # タイトル（音声ファイル名をデフォルト提案）
+    if suggested_title:
+        title = _prompt_with_default("タイトル", suggested_title)
+        while not title:
+            title = input("タイトル（必須）: ").strip()
+    else:
+        title = ""
+        while not title:
+            title = input("タイトル: ").strip()
+            if not title:
+                print("  タイトルは必須です。")
 
+    # 日付（ファイル名先頭の yymdd から推測）
+    default_date = suggested_date or date.today()
     target_date = None
     while target_date is None:
-        raw = input(f"日付（YYYY-MM-DD、Enterで今日 {date.today().isoformat()}）: ").strip()
+        raw = input(f"日付（YYYY-MM-DD） [{default_date.isoformat()}]: ").strip()
         if not raw:
-            target_date = date.today()
+            target_date = default_date
         else:
             try:
                 target_date = date.fromisoformat(raw)
             except ValueError:
                 print("  形式が正しくありません。YYYY-MM-DD で入力してください。")
 
-    print(f"カテゴリ（{'/'.join(VALID_CATEGORIES)}）")
+    suggestions = "、".join(config.CATEGORY_SUGGESTIONS)
+    print(f"カテゴリ候補: {suggestions}")
     category = ""
-    while category not in VALID_CATEGORIES:
-        category = input("カテゴリ: ").strip()
-        if category not in VALID_CATEGORIES:
-            print(f"  いずれかを入力してください: {', '.join(VALID_CATEGORIES)}")
+    while not category:
+        category = input("カテゴリ（自由入力可）: ").strip()
+        if not category:
+            print("  カテゴリは必須です。")
 
     raw_speakers = input("発言者（複数の場合はカンマ区切り、任意）: ").strip()
     speakers = [s.strip() for s in raw_speakers.split(",") if s.strip()] if raw_speakers else []
 
     context = input("補足（任意、Enterでスキップ）: ").strip()
 
+    ocr_images = input("画像をテキスト化して要約に含める？（y/N）: ").strip().lower() == "y"
+
     print()
-    return title, target_date, category, speakers, context
+    return title, target_date, category, speakers, context, ocr_images
 
 
 # === ファイル分類 ===
@@ -144,39 +202,15 @@ def _move(src: Path, dst_dir: Path) -> None:
     logger.info(f"移動: {src.name} -> {dst_dir.name}/")
 
 
-# === 要約Markdown生成 ===
-def _build_summary_md(structured: dict, target_date: date, context: str = "") -> str:
-    d = target_date.isoformat()
-    lines = [
-        f"# {d} {structured.get('title', '')}",
-        f"カテゴリ: {structured.get('category', '')}",
-        "",
-        "## 📋 要約",
-        structured.get("summary", ""),
-        "",
-        "## 💡 キーインサイト",
-    ]
-    for ins in structured.get("key_insights", []) or []:
-        lines.append(f"- {ins}")
-
-    lines += ["", "## ✅ アクションアイテム"]
-    for item in structured.get("action_items", []) or []:
-        lines.append(f"- [ ] {item}")
-
-    if structured.get("highlights"):
-        lines += ["", "## 📝 重要抜粋", structured["highlights"]]
-
-    lines += ["", "## 🏷️ キーワード", ", ".join(structured.get("keywords", []) or [])]
-
-    if context:
-        lines += ["", "## 補足コンテキスト", context]
-
-    return "\n".join(lines)
-
-
 # === メイン ===
 def main() -> int:
-    title, target_date, category, speakers, context = ask_inputs()
+    files = collect_files()
+    if not files:
+        print("inbox/ に処理対象ファイルがありません。")
+        return 0
+
+    suggested_title, suggested_date = _suggest_from_files(files)
+    title, target_date, category, speakers, context, ocr_images = ask_inputs(suggested_title, suggested_date)
 
     logger.info("=" * 60)
     logger.info("学び集約システム 起動")
@@ -184,12 +218,6 @@ def main() -> int:
     if speakers:
         logger.info(f"発言者: {', '.join(speakers)}")
     logger.info("=" * 60)
-
-    files = collect_files()
-    if not files:
-        print("inbox/ に処理対象ファイルがありません。")
-        logger.info("処理対象ファイルなし。終了します。")
-        return 0
 
     logger.info(f"処理対象: {len(files)}件")
     for f in files:
@@ -200,14 +228,19 @@ def main() -> int:
     ocrs: dict[str, str] = {}
     source_types: list[str] = []
     success_paths: list[Path] = []
-    failed: list[tuple[Path, Exception]] = []
 
     for f in files:
+        # 画像テキスト化オフの場合はDriveアップロード対象に含めるがOCR・要約はスキップ
+        if classify(f) == "image" and not ocr_images:
+            logger.info(f"画像テキスト化スキップ（Driveのみ保存）: {f.name}")
+            success_paths.append(f)
+            continue
+
         try:
             result = process_one(f)
             if result is None:
-                failed.append((f, RuntimeError("skipped (unsupported)")))
-                continue
+                logger.error(f"対応外ファイルのため中断: {f.name}")
+                return 1
             sources.append({"filename": result["filename"], "type": result["type"], "text": result["text"]})
             source_types.append(result["type"])
             if result["kind"] == "audio":
@@ -218,12 +251,11 @@ def main() -> int:
         except Exception as e:
             logger.error(f"ファイル処理失敗: {f.name}: {e}")
             logger.error(traceback.format_exc())
-            failed.append((f, e))
+            logger.error("全ファイル処理完了前にエラーが発生したため中断します。")
+            return 1
 
     if not sources:
         logger.warning("処理可能なコンテンツがありません。終了します。")
-        for f, _e in failed:
-            _move(f, config.ERROR_DIR)
         return 1
 
     try:
@@ -236,23 +268,20 @@ def main() -> int:
     except Exception as e:
         logger.error(f"GPT-4o構造化に失敗: {e}")
         logger.error(traceback.format_exc())
-        for f in success_paths:
-            _move(f, config.ERROR_DIR)
         return 1
 
-    drive_url = ""
     try:
-        summary_md = _build_summary_md(structured, target_date=target_date, context=context)
         drive_url = drive_uploader.upload_day(
             target_date=target_date,
             originals=success_paths,
             transcripts=transcripts,
             ocrs=ocrs,
-            summary_md=summary_md,
+            title=title,
         )
     except Exception as e:
-        logger.error(f"Driveアップロード失敗（続行）: {e}")
+        logger.error(f"Driveアップロード失敗: {e}")
         logger.error(traceback.format_exc())
+        return 1
 
     try:
         notion_url = notion_writer.create_page(
@@ -270,17 +299,14 @@ def main() -> int:
     except Exception as e:
         logger.error(f"Notion書き込み失敗: {e}")
         logger.error(traceback.format_exc())
-        for f in success_paths:
-            _move(f, config.ERROR_DIR)
         return 1
 
+    done_dir = config.DONE_DIR / target_date.isoformat()
     for f in success_paths:
-        _move(f, config.DONE_DIR)
-    for f, _e in failed:
-        _move(f, config.ERROR_DIR)
+        _move(f, done_dir)
 
     print(f"Drive: {drive_url}")
-    logger.info(f"完了: 成功 {len(success_paths)}件 / 失敗 {len(failed)}件")
+    logger.info(f"完了: 成功 {len(success_paths)}件")
     return 0
 
 

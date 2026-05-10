@@ -8,9 +8,8 @@ load_dotenv(Path(__file__).parent / ".env", override=True)
 
 # === パス設定 ===
 BASE_DIR = Path(__file__).parent
-INBOX_DIR = Path("/Users/higashitakahisa/Desktop/transcription/inbox")
+INBOX_DIR = Path("/Users/higashitakahisa/Desktop/transcript/inbox")
 DONE_DIR = INBOX_DIR / "done"
-ERROR_DIR = INBOX_DIR / "error"
 LOG_DIR = BASE_DIR / "logs"
 
 # === APIキー ===
@@ -30,16 +29,32 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".heic", ".webp"}
 TEXT_EXTENSIONS = {".txt", ".md"}
 ALL_EXTENSIONS = AUDIO_EXTENSIONS | IMAGE_EXTENSIONS | TEXT_EXTENSIONS
 
-# === kotoba-whisper 設定（完全ローカル実行）===
-KOTOBA_MODEL_ID = "kotoba-tech/kotoba-whisper-v2.0"
-DEVICE = "mps"  # M1 Neural Engine
+# === MLX Whisper 設定（Apple Silicon GPU、完全ローカル実行）===
+KOTOBA_MODEL_ID = "mlx-community/whisper-large-v3"
 # 頻出固有名詞・専門用語をここにカスタマイズ
 INITIAL_PROMPT = "PCDO、AA、PN、石川さん"
+
+# === カテゴリ候補（自由入力も可、ここに追加するだけで候補に表示される）===
+CATEGORY_SUGGESTIONS = [
+    "PN",
+    "全体",
+    "個別面談（自分）",
+    "個別面談",
+]
+
+# === 石川さん固有名詞辞書（文字起こし後補正・要約プロンプト用）===
+ISHIKAWA_CUSTOM_DICT = {
+    "PCDO": "石川氏が運営する社団法人",
+    "AA / ALL ACADEMY": "PCDOの上位コミュニティ",
+    "V×L": "Value × Leverage の考え方",
+    "ESBI": "E(従業員)S(自営)B(ビジネスオーナー)I(投資家)のフレームワーク",
+    "PBL": "Project Based Learning",
+}
 
 # === OpenAI設定 ===
 OPENAI_MODEL = "gpt-4o"
 
 # === ディレクトリ初期化 ===
 def ensure_dirs() -> None:
-    for d in [INBOX_DIR, DONE_DIR, ERROR_DIR, LOG_DIR, GOOGLE_CLIENT_SECRETS.parent]:
+    for d in [INBOX_DIR, DONE_DIR, LOG_DIR, GOOGLE_CLIENT_SECRETS.parent]:
         d.mkdir(parents=True, exist_ok=True)

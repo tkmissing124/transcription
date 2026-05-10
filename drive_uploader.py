@@ -106,7 +106,7 @@ def upload_day(
     originals: list[Path],
     transcripts: dict[str, str],
     ocrs: dict[str, str],
-    summary_md: str | None = None,
+    title: str = "",
 ) -> str:
     """
     指定日のフォルダに原本・文字起こし・OCR・要約を保存する。
@@ -128,21 +128,17 @@ def upload_day(
         tmp_dir = Path(tmp)
 
         if transcripts:
-            t_path = tmp_dir / "transcript.txt"
+            transcript_name = f"{title}_文字起こし.txt" if title else "transcript.txt"
+            t_path = tmp_dir / transcript_name
             body = "\n\n".join(f"# {k}\n{v}" for k, v in transcripts.items())
             t_path.write_text(body, encoding="utf-8")
-            _upload_file(service, folder_id, t_path)
+            _upload_file(service, folder_id, t_path, name=transcript_name)
 
         if ocrs:
             o_path = tmp_dir / "ocr.txt"
             body = "\n\n".join(f"# {k}\n{v}" for k, v in ocrs.items())
             o_path.write_text(body, encoding="utf-8")
             _upload_file(service, folder_id, o_path)
-
-        if summary_md:
-            s_path = tmp_dir / "summary.md"
-            s_path.write_text(summary_md, encoding="utf-8")
-            _upload_file(service, folder_id, s_path)
 
     logger.info(f"Driveアップロード完了: {folder_url}")
     return folder_url

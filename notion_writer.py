@@ -31,27 +31,6 @@ def _paragraphs(content: str) -> list[dict]:
     return blocks
 
 
-def _bullet(content: str) -> dict:
-    return {
-        "object": "block",
-        "type": "bulleted_list_item",
-        "bulleted_list_item": {
-            "rich_text": [{"type": "text", "text": {"content": content}}]
-        },
-    }
-
-
-def _todo_block(content: str) -> dict:
-    return {
-        "object": "block",
-        "type": "to_do",
-        "to_do": {
-            "rich_text": [{"type": "text", "text": {"content": content}}],
-            "checked": False,
-        },
-    }
-
-
 def _bookmark(url: str) -> dict:
     return {"object": "block", "type": "bookmark", "bookmark": {"url": url}}
 
@@ -74,23 +53,11 @@ def build_children(
     children.append(_heading(2, "📋 要約"))
     children.extend(_paragraphs(structured.get("summary", "")))
 
-    # キーインサイト
-    key_insights = structured.get("key_insights", []) or []
-    children.append(_heading(2, "💡 キーインサイト"))
-    if key_insights:
-        for insight in key_insights:
-            children.append(_bullet(insight))
-    else:
-        children.extend(_paragraphs("（なし）"))
-
-    # アクションアイテム
-    children.append(_heading(2, "✅ アクションアイテム"))
-    action_items = structured.get("action_items", []) or []
-    if action_items:
-        for item in action_items:
-            children.append(_todo_block(item))
-    else:
-        children.extend(_paragraphs("（なし）"))
+    # 石川さんの考え方
+    ishikawa = structured.get("ishikawa_philosophy", "")
+    if ishikawa:
+        children.append(_heading(2, "🧠 石川さんの考え方"))
+        children.extend(_paragraphs(ishikawa))
 
     # 重要抜粋
     highlights = structured.get("highlights", "")
