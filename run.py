@@ -132,7 +132,7 @@ def ask_inputs(suggested_title: str = "", suggested_date: date | None = None) ->
             print("  カテゴリは必須です。")
 
     raw_speakers = input("発言者（複数の場合はカンマ区切り、任意）: ").strip()
-    speakers = [s.strip() for s in raw_speakers.split(",") if s.strip()] if raw_speakers else []
+    speakers = [s.strip() for s in raw_speakers.replace("、", ",").split(",") if s.strip()] if raw_speakers else []
 
     context = input("補足（任意、Enterでスキップ）: ").strip()
 

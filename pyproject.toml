@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "mlx-whisper>=0.4.3",
     "pyannote.audio>=3.3.2",
+    "soundfile>=0.12.1",
     "pillow-heif>=0.18.0",
     "openai>=1.50.0",
     "notion-client>=2.2.1",

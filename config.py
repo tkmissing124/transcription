@@ -18,6 +18,13 @@ NOTION_API_KEY = os.getenv("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID", "")
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 
+# === HuggingFaceモデル更新確認の制御 ===
+# HF_OFFLINE=true にするとネットワークへのアクセスをスキップし起動が速くなる
+# モデルが未ダウンロードの場合は false にしてダウンロード後、true に戻す
+HF_OFFLINE = os.getenv("HF_OFFLINE", "false").lower() == "true"
+if HF_OFFLINE:
+    os.environ["HF_HUB_OFFLINE"] = "1"
+
 # === Google Drive設定（OAuth 2.0）===
 GOOGLE_CLIENT_SECRETS = BASE_DIR / "credentials" / "client_secret.json"
 GOOGLE_TOKEN_FILE = BASE_DIR / "credentials" / "token.json"

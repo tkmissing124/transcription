@@ -65,7 +65,7 @@ def _diarize(file_path: Path, num_speakers: int | None = None) -> list[tuple[flo
 
     pipeline = Pipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1",
-        use_auth_token=config.HF_TOKEN,
+        token=config.HF_TOKEN,
     )
 
     if torch.backends.mps.is_available():
@@ -78,14 +78,74 @@ def _diarize(file_path: Path, num_speakers: int | None = None) -> list[tuple[flo
     if num_speakers:
         kwargs["num_speakers"] = num_speakers
 
-    diarization = pipeline(str(file_path), **kwargs)
+    # torchcodec/FFmpegの互換性問題を回避するためtorchaudioで事前ロード
+    audio_input = _load_audio_tensor(file_path)
+    output = pipeline(audio_input, **kwargs)
+
+    # pyannote のバージョンによって戻り値が異なる (Annotation or DiarizeOutput)
+    annotation = _unwrap_annotation(output)
 
     result = [
         (segment.start, segment.end, speaker)
-        for segment, _, speaker in diarization.itertracks(yield_label=True)
+        for segment, _, speaker in annotation.itertracks(yield_label=True)
     ]
     logger.info(f"話者分離完了: {len(set(s for _, _, s in result))}名検出")
     return result
+
+
+def _unwrap_annotation(output):
+    """pyannoteの戻り値から Annotation オブジェクトを取り出す。
+    バージョンによって Annotation 直接 or DiarizeOutput(dataclass/namedtuple)が返る。"""
+    if hasattr(output, "itertracks"):
+        return output
+
+    # dataclass の各フィールドを探索
+    try:
+        import dataclasses
+        for field in dataclasses.fields(output):
+            val = getattr(output, field.name)
+            if hasattr(val, "itertracks"):
+                return val
+    except TypeError:
+        pass
+
+    # NamedTuple / iterable として探索
+    try:
+        for val in output:
+            if hasattr(val, "itertracks"):
+                return val
+    except TypeError:
+        pass
+
+    raise RuntimeError(
+        f"Annotation を取り出せません: type={type(output).__name__}, "
+        f"attrs={[a for a in dir(output) if not a.startswith('_')]}"
+    )
+
+
+def _load_audio_tensor(file_path: Path) -> dict:
+    """ffmpeg CLIでwavに変換してpyannote用テンソルとして返す（torchcodec依存を回避）"""
+    import subprocess
+    import tempfile
+    import numpy as np
+    import torch
+    import soundfile as sf
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(file_path), "-ar", "16000", "-ac", "1", str(tmp_path)],
+            capture_output=True,
+            check=True,
+        )
+        waveform_np, sample_rate = sf.read(str(tmp_path), dtype="float32", always_2d=True)
+        waveform = torch.from_numpy(waveform_np.T)  # (channels, time)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    return {"waveform": waveform, "sample_rate": sample_rate}
 
 
 def _assign_speakers(segments: list[dict], diarization: list[tuple[float, float, str]]) -> list[dict]:
