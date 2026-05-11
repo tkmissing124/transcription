@@ -94,7 +94,7 @@ def _prompt_with_default(prompt: str, default: str) -> str:
 
 
 # === 対話式入力 ===
-def ask_inputs(suggested_title: str = "", suggested_date: date | None = None) -> tuple[str, date, str, list[str], str, bool]:
+def ask_inputs(suggested_title: str = "", suggested_date: date | None = None) -> tuple[str, date, str, list[str], str, bool, bool]:
     """タイトル・日付・カテゴリ・発言者・補足を対話式で取得する"""
     print()
 
@@ -138,8 +138,10 @@ def ask_inputs(suggested_title: str = "", suggested_date: date | None = None) ->
 
     ocr_images = input("画像をテキスト化して要約に含める？（y/N）: ").strip().lower() == "y"
 
+    diarize = input("話者分離を実行する？（y/N）: ").strip().lower() == "y"
+
     print()
-    return title, target_date, category, speakers, context, ocr_images
+    return title, target_date, category, speakers, context, ocr_images, diarize
 
 
 # === ファイル分類 ===
@@ -170,11 +172,11 @@ def collect_files() -> list[Path]:
 
 
 # === ファイル個別処理 ===
-def process_one(file_path: Path) -> dict | None:
+def process_one(file_path: Path, diarize: bool = False, num_speakers: int | None = None) -> dict | None:
     kind = classify(file_path)
 
     if kind == "audio":
-        txt = audio.transcribe(file_path)
+        txt = audio.transcribe(file_path, diarize=diarize, num_speakers=num_speakers)
         return {"filename": file_path.name, "type": "音声", "text": txt, "kind": "audio"}
 
     if kind == "image":
@@ -210,13 +212,21 @@ def main() -> int:
         return 0
 
     suggested_title, suggested_date = _suggest_from_files(files)
-    title, target_date, category, speakers, context, ocr_images = ask_inputs(suggested_title, suggested_date)
+    title, target_date, category, speakers, context, ocr_images, diarize = ask_inputs(suggested_title, suggested_date)
+
+    # 発言者が指定されている場合、人数をpyannoteに渡す＆コンテキストに追加
+    num_speakers = len(speakers) if speakers else None
+    if speakers:
+        speakers_line = f"発言者: {', '.join(speakers)}"
+        context = f"{speakers_line}\n{context}" if context else speakers_line
 
     logger.info("=" * 60)
     logger.info("学び集約システム 起動")
     logger.info(f"タイトル: {title} / 日付: {target_date} / カテゴリ: {category}")
     if speakers:
         logger.info(f"発言者: {', '.join(speakers)}")
+    if diarize:
+        logger.info(f"話者分離: 有効（推定人数: {num_speakers or '自動'}）")
     logger.info("=" * 60)
 
     logger.info(f"処理対象: {len(files)}件")
@@ -237,7 +247,7 @@ def main() -> int:
             continue
 
         try:
-            result = process_one(f)
+            result = process_one(f, diarize=diarize, num_speakers=num_speakers)
             if result is None:
                 logger.error(f"対応外ファイルのため中断: {f.name}")
                 return 1
@@ -286,10 +296,9 @@ def main() -> int:
     try:
         notion_url = notion_writer.create_page(
             structured=structured,
-            source_types=source_types,
             drive_url=drive_url,
             source_count=len(sources),
-            processed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            processed_at=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             target_date=target_date,
             context=context,
             filenames=[f.name for f in success_paths],

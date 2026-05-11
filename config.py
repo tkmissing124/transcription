@@ -16,6 +16,7 @@ LOG_DIR = BASE_DIR / "logs"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 NOTION_API_KEY = os.getenv("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID", "")
+HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 # === Google Drive設定（OAuth 2.0）===
 GOOGLE_CLIENT_SECRETS = BASE_DIR / "credentials" / "client_secret.json"
@@ -30,7 +31,7 @@ TEXT_EXTENSIONS = {".txt", ".md"}
 ALL_EXTENSIONS = AUDIO_EXTENSIONS | IMAGE_EXTENSIONS | TEXT_EXTENSIONS
 
 # === MLX Whisper 設定（Apple Silicon GPU、完全ローカル実行）===
-KOTOBA_MODEL_ID = "mlx-community/whisper-large-v3"
+MODEL_ID = "mlx-community/whisper-large-v3-turbo"
 # 頻出固有名詞・専門用語をここにカスタマイズ
 INITIAL_PROMPT = "PCDO、AA、PN、石川さん"
 

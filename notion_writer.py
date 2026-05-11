@@ -86,7 +86,6 @@ def build_children(
 
 def create_page(
     structured: dict,
-    source_types: list[str],
     drive_url: str,
     source_count: int,
     processed_at: str,
@@ -114,10 +113,7 @@ def create_page(
         },
         "日付": {"date": {"start": d}},
         "カテゴリ": {"select": {"name": category}},
-        "ソース種別": {
-            "multi_select": [{"name": s} for s in sorted(set(source_types))]
-        },
-        "ステータス": {"select": {"name": "未読"}},
+        "処理日時": {"date": {"start": processed_at}},
     }
 
     if drive_url:

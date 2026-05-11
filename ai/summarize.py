@@ -21,6 +21,13 @@ SYSTEM_PROMPT = """あなたは学びを記録・整理するアシスタント�
   "ishikawa_philosophy": "（石川氏の発言が含まれる場合のみ。なければ空文字）"
 }
 
+【話者の推定について】
+文字起こしには話者ラベルがありません。補足コンテキストに会話の背景・参加者・役割が記載されている場合は、
+それを手がかりに誰が話しているかを推定してください。
+例: 「AさんがBさんに相談している」という背景なら、
+  - 敬語を使い状況を説明・質問している発言 → Aさん
+  - アドバイス・見解を述べている発言 → Bさん
+
 注意事項:
 - 原文にない情報を追加・補足しないこと
 - 一般論を追加しないこと
@@ -36,7 +43,17 @@ def _build_ishikawa_dict_str() -> str:
 
 
 ISHIKAWA_PROMPT = """あなたは石川氏の思考・哲学を抽出する専門家です。
-以下の文字起こしから、石川氏の発言のみを対象に抽出してください。
+以下の文字起こしから、石川氏の発言と推定される部分を対象に抽出してください。
+
+【前提: 話者ラベルがない場合の推定方法】
+文字起こしには話者ラベルがありません。補足コンテキストに会話の背景が記載されている場合は、
+それを手がかりに石川氏の発言を推定してください。
+
+推定の手がかり（優先順位順）:
+1. 補足コンテキストに記載された役割・関係性（最優先）
+2. アドバイス・指摘・見解を述べている発言（相談を受けている側）
+3. タメ口・断定的な表現（目上・指導する立場）
+4. 相手の発言を受けて評価・解説している部分
 
 【カスタム辞書（誤変換補正）】
 {dict_str}
@@ -54,7 +71,7 @@ ISHIKAWA_PROMPT = """あなたは石川氏の思考・哲学を抽出する専�
 【禁止事項】
 - AIによる一般論・アドバイスの追加禁止
 - 石川氏が言っていない内容の補完禁止
-- 石川氏の発言が含まれない・不明な場合は「（石川氏の発言は確認できませんでした）」とだけ出力"""
+- 推定が全くできない場合のみ「（石川氏の発言を特定できませんでした）」と出力"""
 
 
 def summarize(sources: list[dict], title: str, category: str, context: str = "") -> dict:
@@ -113,7 +130,7 @@ def summarize(sources: list[dict], title: str, category: str, context: str = "")
     # 石川さんの考え方を別途抽出
     has_audio = any(s["type"] == "音声" for s in sources)
     if has_audio:
-        result["ishikawa_philosophy"] = _extract_ishikawa(client, sources)
+        result["ishikawa_philosophy"] = _extract_ishikawa(client, sources, context)
 
     # タイトルとカテゴリはユーザー指定値を使用
     result["title"] = title
@@ -123,12 +140,16 @@ def summarize(sources: list[dict], title: str, category: str, context: str = "")
     return result
 
 
-def _extract_ishikawa(client: OpenAI, sources: list[dict]) -> str:
+def _extract_ishikawa(client: OpenAI, sources: list[dict], context: str = "") -> str:
     audio_sources = [s for s in sources if s["type"] == "音声"]
     if not audio_sources:
         return ""
 
-    combined = "\n\n".join(f"# {s['filename']}\n{s['text']}" for s in audio_sources)
+    parts = []
+    if context:
+        parts.append(f"## 補足コンテキスト（最優先で反映）\n{context}")
+    parts.extend(f"# {s['filename']}\n{s['text']}" for s in audio_sources)
+    combined = "\n\n".join(parts)
     prompt = ISHIKAWA_PROMPT.format(dict_str=_build_ishikawa_dict_str())
 
     response = client.chat.completions.create(
